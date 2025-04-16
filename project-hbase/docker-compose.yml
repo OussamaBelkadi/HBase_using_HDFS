@@ -1,0 +1,113 @@
+version: '3'
+
+services:
+  # ZooKeeper service
+  zookeeper:
+    image: zookeeper:3.7
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_SERVERS: server.1=zookeeper:2888:3888;2181
+    volumes:
+      - zookeeper_data:/data
+      - zookeeper_datalog:/datalog
+    restart: always
+    networks:
+      - hbase-network
+
+  # HBase Master & RegionServer
+  hbase:
+    image: harisekhon/hbase
+    container_name: hbase
+    depends_on:
+      - zookeeper
+    ports:
+      - "16000:16000"   # HBase Master
+      - "16010:16010"   # HBase Master Web UI
+      - "16020:16020"   # HBase RegionServer
+      - "16030:16030"   # HBase RegionServer Web UI
+      - "8080:8080"     # HBase REST
+      - "8085:8085"     # HBase REST Info
+      - "9090:9090"     # HBase Thrift
+      - "9095:9095"     # HBase Thrift Info
+    environment:
+      HBASE_CONF_hbase_rootdir: hdfs://namenode:9000/hbase
+      HBASE_CONF_hbase_cluster_distributed: "true"
+      HBASE_CONF_hbase_zookeeper_quorum: zookeeper
+      HBASE_CONF_hbase_master: hbase:16000
+      HBASE_CONF_hbase_master_hostname: hbase
+      HBASE_CONF_hbase_master_port: 16000
+      HBASE_CONF_hbase_master_info_port: 16010
+      HBASE_CONF_hbase_regionserver_port: 16020
+      HBASE_CONF_hbase_regionserver_info_port: 16030
+    volumes:
+      - hbase_data:/hbase-data
+    restart: always
+    networks:
+      - hbase-network
+
+  # HDFS NameNode
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    ports:
+      - "9870:9870"     # NameNode Web UI
+      - "9000:9000"     # HDFS
+    environment:
+      CLUSTER_NAME: "hbase-cluster"
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      CORE_CONF_hadoop_http_staticuser_user: root
+      HDFS_CONF_dfs_webhdfs_enabled: "true"
+      HDFS_CONF_dfs_permissions_enabled: "false"
+      HDFS_CONF_dfs_namenode_datanode_registration_ip___hostname___check: "false"
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    restart: always
+    networks:
+      - hbase-network
+
+  # HDFS DataNode
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    depends_on:
+      - namenode
+    ports:
+      - "9864:9864"     # DataNode Web UI
+    environment:
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      CORE_CONF_hadoop_http_staticuser_user: root
+      HDFS_CONF_dfs_webhdfs_enabled: "true"
+      HDFS_CONF_dfs_permissions_enabled: "false"
+      HDFS_CONF_dfs_namenode_datanode_registration_ip___hostname___check: "false"
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    restart: always
+    networks:
+      - hbase-network
+
+  # Phoenix Query Server (optionnel - pour SQL sur HBase)
+  phoenix:
+    image: boostport/hbase-phoenix-queryserver:2.0-5.0
+    container_name: phoenix
+    depends_on:
+      - hbase
+    ports:
+      - "8765:8765"     # Phoenix Query Server
+    environment:
+      HBASE_CONF_hbase_zookeeper_quorum: zookeeper
+    networks:
+      - hbase-network
+
+volumes:
+  zookeeper_data:
+  zookeeper_datalog:
+  hadoop_namenode:
+  hadoop_datanode:
+  hbase_data:
+
+networks:
+  hbase-network:
+    driver: bridge
